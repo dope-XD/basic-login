@@ -66,12 +66,13 @@ type AuthHandler = (
   next: NextFunction
 ) => Promise<void> | void;
 
-const authMiddleware = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+const authMiddleware = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const authHeader = req.headers.authorization;
     
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return res.status(401).json({ error: 'Unauthorized: No token provided' });
+      res.status(401).json({ error: 'Unauthorized: No token provided' });
+      return;
     }
     
     const token = authHeader.split(' ')[1];
@@ -79,10 +80,11 @@ const authMiddleware = async (req: AuthenticatedRequest, res: Response, next: Ne
     const { data, error } = await supabase.auth.getUser(token);
     
     if (error || !data.user) {
-      return res.status(401).json({ error: 'Unauthorized: Invalid token' });
+      res.status(401).json({ error: 'Unauthorized: Invalid token' });
+      return;
     }
     
-    req.user = data.user;
+    (req as AuthenticatedRequest).user = data.user;
     next();
   } catch (error) {
     console.error('Auth middleware error:', error);
@@ -127,16 +129,14 @@ app.get('/health', (_, res) => {
 });
 
 // Protected endpoint
-// @ts-expect-error: Express type definitions don't handle custom request types well
-app.get('/api/protected', authMiddleware, (req, res, next) => {
+app.get('/api/protected', authMiddleware, async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { user } = req as AuthenticatedRequest;
+    const user = (req as AuthenticatedRequest).user;
     console.log('Protected endpoint accessed by:', {
       email: user.email,
-      timestamp: new Date().toISOString(),
-      ip: req.ip
+      headers: req.headers
     });
-    res.json({ message: 'hello' });
+    res.json({ message: 'Access granted to protected endpoint', user });
   } catch (error) {
     next(error);
   }
