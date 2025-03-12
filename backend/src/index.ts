@@ -1,4 +1,4 @@
-import express, { Request, Response, NextFunction } from 'express';
+import express, { Request, Response, NextFunction, RequestHandler } from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import { createClient } from '@supabase/supabase-js';
@@ -57,8 +57,14 @@ app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
 });
 
 interface AuthenticatedRequest extends Request {
-  user?: any;
+  user: any;
 }
+
+type AuthHandler = (
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+) => Promise<void> | void;
 
 const authMiddleware = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
@@ -90,12 +96,11 @@ const WINDOW_MS = 15 * 60 * 1000; // 15 minutes
 const MAX_REQUESTS = 100; // per window
 
 const rateLimitMiddleware = (req: Request, res: Response, next: NextFunction) => {
-  const ip = req.ip;
+  const ip = req.ip || req.socket.remoteAddress || 'unknown';
   const now = Date.now();
   const windowData = requestCounts.get(ip) || { count: 0, timestamp: now };
 
   if (now - windowData.timestamp > WINDOW_MS) {
-    // Reset window
     windowData.count = 0;
     windowData.timestamp = now;
   }
@@ -104,7 +109,8 @@ const rateLimitMiddleware = (req: Request, res: Response, next: NextFunction) =>
   requestCounts.set(ip, windowData);
 
   if (windowData.count > MAX_REQUESTS) {
-    return res.status(429).json({ error: 'Too many requests' });
+    res.status(429).json({ error: 'Too many requests' });
+    return;
   }
 
   next();
@@ -121,14 +127,19 @@ app.get('/health', (_, res) => {
 });
 
 // Protected endpoint
-app.get('/api/protected', authMiddleware, (req: AuthenticatedRequest, res: Response) => {
-  const user = req.user;
-  console.log('Protected endpoint accessed by:', {
-    email: user.email,
-    timestamp: new Date().toISOString(),
-    ip: req.ip
-  });
-  res.json({ message: 'hello' });
+// @ts-expect-error: Express type definitions don't handle custom request types well
+app.get('/api/protected', authMiddleware, (req, res, next) => {
+  try {
+    const { user } = req as AuthenticatedRequest;
+    console.log('Protected endpoint accessed by:', {
+      email: user.email,
+      timestamp: new Date().toISOString(),
+      ip: req.ip
+    });
+    res.json({ message: 'hello' });
+  } catch (error) {
+    next(error);
+  }
 });
 
 // Handle 404

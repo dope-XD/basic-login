@@ -3,36 +3,41 @@ import { useAuth } from '../hooks/useAuth';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../supabase';
 
+interface ApiResponse {
+  message: string;
+}
+
 const HomePage: React.FC = () => {
   const { user, signOut } = useAuth();
   const navigate = useNavigate();
-  const [message, setMessage] = useState<string>('');
+  const [apiMessage, setApiMessage] = useState<string>('');
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchProtectedData = async () => {
       try {
-        const token = await (await supabase.auth.getSession()).data.session?.access_token;
+        setLoading(true);
+        setError(null);
         
-        if (!token) {
-          throw new Error('No access token available');
-        }
-        
-        const response = await fetch(`${process.env.REACT_APP_API_URL || 'http://localhost:5000'}/api/protected`, {
-          headers: {
-            Authorization: `Bearer ${token}`
+        const response = await fetch(
+          `${process.env.REACT_APP_API_URL}/api/protected`,
+          {
+            headers: {
+              Authorization: `Bearer ${(await supabase.auth.getSession()).data.session?.access_token}`,
+            },
           }
-        });
-        
+        );
+
         if (!response.ok) {
-          throw new Error('Failed to fetch protected data');
+          throw new Error(`API Error: ${response.status}`);
         }
-        
-        const data = await response.json();
-        setMessage(data.message);
-      } catch (error) {
-        console.error('Error fetching protected data:', error);
-        setMessage('Error fetching data');
+
+        const data: ApiResponse = await response.json();
+        setApiMessage(data.message);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'An error occurred');
+        console.error('Error fetching protected data:', err);
       } finally {
         setLoading(false);
       }
@@ -42,8 +47,12 @@ const HomePage: React.FC = () => {
   }, []);
 
   const handleSignOut = async () => {
-    await signOut();
-    navigate('/login');
+    try {
+      await signOut();
+      navigate('/login');
+    } catch (err) {
+      console.error('Error signing out:', err);
+    }
   };
 
   return (
@@ -55,7 +64,12 @@ const HomePage: React.FC = () => {
         boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
         display: 'flex',
         justifyContent: 'space-between',
-        alignItems: 'center'
+        alignItems: 'center',
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        right: 0,
+        zIndex: 1000
       }}>
         <h1 style={{ margin: 0 }}>Basic Login</h1>
         
@@ -69,7 +83,6 @@ const HomePage: React.FC = () => {
             alignItems: 'center',
             gap: '0.5rem'
           }}>
-            {/* User Avatar */}
             <div style={{
               width: '40px',
               height: '40px',
@@ -80,11 +93,13 @@ const HomePage: React.FC = () => {
               justifyContent: 'center',
               color: 'white',
               fontWeight: 'bold',
-              cursor: 'pointer'
+              fontSize: '16px'
             }}>
               {user?.email?.[0].toUpperCase()}
             </div>
-            <span>{user?.email}</span>
+            <span style={{ maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              {user?.email}
+            </span>
           </div>
           
           <button
@@ -95,7 +110,8 @@ const HomePage: React.FC = () => {
               color: 'white',
               border: 'none',
               borderRadius: '4px',
-              cursor: 'pointer'
+              cursor: 'pointer',
+              transition: 'background-color 0.2s'
             }}
           >
             Sign Out
@@ -105,23 +121,47 @@ const HomePage: React.FC = () => {
 
       {/* Main Content */}
       <main style={{
-        padding: '2rem',
+        padding: '6rem 2rem 2rem',
         maxWidth: '1200px',
         margin: '0 auto'
       }}>
-        <h2>Protected Content</h2>
-        {loading ? (
-          <p>Loading...</p>
-        ) : (
-          <div style={{
-            marginTop: '1rem',
-            padding: '1rem',
-            backgroundColor: '#f5f5f5',
-            borderRadius: '4px'
-          }}>
-            <p>Response from protected API: <strong>{message}</strong></p>
-          </div>
-        )}
+        <div style={{
+          backgroundColor: 'white',
+          borderRadius: '8px',
+          padding: '2rem',
+          boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+        }}>
+          <h2>Welcome to your Dashboard</h2>
+          
+          {loading ? (
+            <div style={{
+              display: 'flex',
+              justifyContent: 'center',
+              padding: '2rem'
+            }}>
+              <p>Loading...</p>
+            </div>
+          ) : error ? (
+            <div style={{
+              backgroundColor: '#ffebee',
+              color: '#c62828',
+              padding: '1rem',
+              borderRadius: '4px',
+              marginTop: '1rem'
+            }}>
+              <p>Error: {error}</p>
+            </div>
+          ) : (
+            <div style={{
+              backgroundColor: '#f5f5f5',
+              padding: '1rem',
+              borderRadius: '4px',
+              marginTop: '1rem'
+            }}>
+              <p>API Response: <strong>{apiMessage}</strong></p>
+            </div>
+          )}
+        </div>
       </main>
     </div>
   );
